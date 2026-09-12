@@ -11,18 +11,40 @@ class SessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class DetailIn(BaseModel):
+class EvidenceIn(BaseModel):
     field: str
     value: str
-    source: str = "seller_declared"
+    provenance: str = "seller_declared"
 
 
-class DetailOut(BaseModel):
+class EvidenceOut(BaseModel):
     field: str
     value: str
-    source: str
+    provenance: str
+    media_id: str | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FieldEvidenceOut(BaseModel):
+    """Resolved view of one field's evidence — see app.services.evidence.
+    `status` is either a provenance name (exactly one source has a value),
+    "confirmed" (multiple sources agree), "conflicting" (they disagree —
+    `value` is deliberately null), or "unknown" (nothing recorded)."""
+
+    field: str
+    status: str
+    value: str | None
+    seller_declared: str | None
+    observed_from_photo: str | None
+    inferred_candidates: list[str]
+    supporting_media_id: str | None
+
+
+class NextPhotoOut(BaseModel):
+    requested_view: str
+    reason: str
+    resolves: str
 
 
 class MediaOut(BaseModel):
@@ -33,6 +55,7 @@ class MediaOut(BaseModel):
     reject_reason: str | None
     component_tag: str | None
     quality_notes: list
+    vision_status: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,8 +74,8 @@ class SessionDetailOut(BaseModel):
     id: str
     status: str
     coverage: dict[str, str]
-    next_instruction: str | None
-    declared_details: list[DetailOut]
+    evidence: list[FieldEvidenceOut]
+    next_photo: NextPhotoOut | None
     findings: list[FindingOut]
     latest_appraisal_id: str | None
 
@@ -60,6 +83,14 @@ class SessionDetailOut(BaseModel):
 class ComparableOut(BaseModel):
     listing_id: str
     similarity_weight: float
+    make: str
+    model: str
+    year: int
+    mileage_km: int
+    axle_config: str
+    price: float
+    currency: str
+    source_url: str
 
 
 class AppraisalOut(BaseModel):
@@ -73,7 +104,7 @@ class AppraisalOut(BaseModel):
     currency: str
     comparable_count: int
     comparables: list[ComparableOut]
+    matched_attributes: dict[str, str]
     findings: list[FindingOut]
     reasons: list[str]
-
-    model_config = ConfigDict(from_attributes=True)
+    next_photo: NextPhotoOut | None

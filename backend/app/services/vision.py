@@ -33,6 +33,12 @@ class VisionResult:
     vehicle_category_guess: str | None
     make_guess: str | None
     model_guess: str | None
+    # A clearly legible badge/spec-plate reading is stronger evidence than a
+    # visual guess — when present, the caller records model info as
+    # observed_from_photo instead of inferred_candidate.
+    visible_badge_text: str | None = None
+    structural_damage_suspected: bool = False
+    tire_concern_noted: bool = False
     extracted_specs: dict[str, str] = field(default_factory=dict)
     component_observations: list[ComponentObservation] = field(default_factory=list)
     quality_issues: list[str] = field(default_factory=list)
@@ -58,6 +64,9 @@ class MockVisionAdapter(VisionAdapter):
             make_guess=None,
             model_guess=None,
             extracted_specs={},
+            visible_badge_text=None,
+            structural_damage_suspected=False,
+            tire_concern_noted=False,
             component_observations=[
                 ComponentObservation(
                     component=component_hint or "unknown",
@@ -119,10 +128,20 @@ class AnthropicVisionAdapter(VisionAdapter):
             "semi-trailer — NOT a pickup, van, bus, motorcycle, or the trailer itself\n"
             "- vehicle_category_guess (string, e.g. 'tractor_unit', 'motorcycle', 'passenger_car', "
             "'empty_scene', 'unknown')\n"
-            "- make_guess (string or null)\n"
-            "- model_guess (string or null)\n"
+            "- make_guess (string or null): a visual guess even without a legible badge\n"
+            "- model_guess (string or null): a visual guess even without a legible badge\n"
+            "- visible_badge_text (string or null): ONLY the literal text of a manufacturer "
+            "badge/spec plate if you can actually read it (e.g. 'ACTROS 1845') — null if no "
+            "badge is legible in this photo, even if you can still guess the model visually\n"
+            "- structural_damage_suspected (bool): true only for damage that looks like it could "
+            "affect the frame/chassis structure (e.g. a bent frame rail, a cracked chassis) — "
+            "NOT cosmetic dents, scratches, or surface rust\n"
+            "- tire_concern_noted (bool): true if a tire shows a visible cut, bulge, or clearly "
+            "uneven wear that isn't fully resolved by this photo alone\n"
             "- extracted_specs (object; ONLY fields actually legible in this photo, e.g. "
-            '{"mileage_km": "480000"} if an odometer is clearly readable — omit otherwise)\n'
+            '{"mileage_km": "480000"} if an odometer is clearly readable, or {"year": "2019"} '
+            "if a registration/build plate shows it, or {\"axle_config\": \"4x2\"} if countable "
+            "from a full side/rear view — omit any field you cannot actually read)\n"
             "- component_observations (array of {component, observation, visibility, "
             "recommended_action}; one entry per distinct thing you can say something concrete "
             "about; recommended_action is 'none' unless a retake/closer photo would help)\n"
@@ -147,6 +166,9 @@ class AnthropicVisionAdapter(VisionAdapter):
             vehicle_category_guess=data.get("vehicle_category_guess"),
             make_guess=data.get("make_guess"),
             model_guess=data.get("model_guess"),
+            visible_badge_text=data.get("visible_badge_text"),
+            structural_damage_suspected=bool(data.get("structural_damage_suspected", False)),
+            tire_concern_noted=bool(data.get("tire_concern_noted", False)),
             extracted_specs=data.get("extracted_specs", {}),
             component_observations=observations,
             quality_issues=data.get("quality_issues", []),

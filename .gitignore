@@ -28,3 +28,6 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# Never release: v1 Figma export, kept local-only until redone
+DO NOT RELEASE/

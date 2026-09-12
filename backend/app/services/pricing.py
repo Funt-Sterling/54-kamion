@@ -28,8 +28,7 @@ class VehicleSpec:
 
 @dataclass
 class Comparable:
-    listing_id: str
-    price: float
+    listing: Listing
     weight: float
 
 
@@ -164,10 +163,7 @@ def price_from_comparables(
                 "data_pipeline/evaluate.py's measured quantile before the judged demo."
             )
 
-    comparables = [
-        Comparable(listing_id=listing.id, price=listing.price, weight=w)
-        for (listing, _d), w in zip(scored, weights)
-    ]
+    comparables = [Comparable(listing=listing, weight=w) for (listing, _d), w in zip(scored, weights)]
 
     return PricingResult(
         status="priced",

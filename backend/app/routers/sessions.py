@@ -3,8 +3,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..constants import TRACKED_EVIDENCE_FIELDS
 from ..db import get_db
-from ..services.session_state import coverage_and_instruction, latest_details
+from ..services import gate
+from ..services.evidence import get_field_evidence
+from ..services.session_state import coverage_only
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -25,11 +28,18 @@ def _get_session_or_404(db: Session, session_id: str) -> models.InspectionSessio
     return session
 
 
+def _next_photo_out(request: gate.NextPhotoRequest | None) -> schemas.NextPhotoOut | None:
+    if request is None:
+        return None
+    return schemas.NextPhotoOut(requested_view=request.requested_view, reason=request.reason, resolves=request.resolves)
+
+
 @router.get("/{session_id}", response_model=schemas.SessionDetailOut)
 def get_session(session_id: str, db: Session = Depends(get_db)):
     session = _get_session_or_404(db, session_id)
-    coverage, next_instruction = coverage_and_instruction(db, session_id)
-    details = latest_details(db, session_id)
+    coverage = coverage_only(db, session_id)
+    evidence = [get_field_evidence(db, session_id, field) for field in TRACKED_EVIDENCE_FIELDS]
+    next_photo = gate.next_best_photo(db, session_id)
     findings = db.scalars(select(models.Finding).where(models.Finding.session_id == session_id)).all()
     last_appraisal = db.scalars(
         select(models.Appraisal)
@@ -42,18 +52,23 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
         id=session.id,
         status=session.status,
         coverage=coverage,
-        next_instruction=next_instruction,
-        declared_details=[schemas.DetailOut.model_validate(d) for d in details.values()],
+        evidence=[schemas.FieldEvidenceOut(**vars(e)) for e in evidence],
+        next_photo=_next_photo_out(next_photo),
         findings=[schemas.FindingOut.model_validate(f) for f in findings],
         latest_appraisal_id=last_appraisal.id if last_appraisal else None,
     )
 
 
-@router.patch("/{session_id}/details", response_model=list[schemas.DetailOut])
-def set_detail(session_id: str, body: schemas.DetailIn, db: Session = Depends(get_db)):
+@router.patch("/{session_id}/details", response_model=list[schemas.FieldEvidenceOut])
+def declare_detail(session_id: str, body: schemas.EvidenceIn, db: Session = Depends(get_db)):
+    """Record a seller-declared (or otherwise provenanced) fact. Never
+    overwrites prior evidence — if this conflicts with something already
+    observed from a photo, GET /sessions/{id} (and the field returned here)
+    will show status="conflicting" rather than silently picking a value."""
     _get_session_or_404(db, session_id)
-    db.add(models.DeclaredDetail(session_id=session_id, field=body.field, value=body.value, source=body.source))
+    db.add(
+        models.EvidenceRecord(session_id=session_id, field=body.field, value=body.value, provenance=body.provenance)
+    )
     db.commit()
 
-    details = latest_details(db, session_id)
-    return [schemas.DetailOut.model_validate(d) for d in details.values()]
+    return [schemas.FieldEvidenceOut(**vars(get_field_evidence(db, session_id, field))) for field in TRACKED_EVIDENCE_FIELDS]

@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..config import get_settings
-from ..constants import REQUIRED_COMPONENTS
 from ..db import get_db
 from ..services import quality
 from ..services.vision import get_vision_adapter
@@ -55,7 +54,8 @@ def upload_media(
     accepted = True
     reject_reason: str | None = None
     quality_notes: list[str] = []
-    component_tag = component_hint if component_hint in REQUIRED_COMPONENTS else component_hint
+    component_tag = component_hint
+    result = None
 
     if kind in ANALYZED_KINDS:
         try:
@@ -91,14 +91,17 @@ def upload_media(
         reject_reason=reject_reason,
         quality_notes=quality_notes,
         perceptual_hash=result.phash if kind in ANALYZED_KINDS and result is not None else None,
+        # Photos never analyzed (video/frame sampling — out of scope, see
+        # docs/plan.md) or rejected before analysis just stay "pending".
+        vision_status="pending",
     )
     db.add(media)
     db.commit()
     db.refresh(media)
 
-    # Only send accepted stills/frames to the (slower, paid) vision model.
-    # Video frame sampling/extraction is out of scope for this scaffold —
-    # see docs/plan.md's capture-and-feedback section for the intended design.
+    # Only send quality-accepted stills/frames to the (slower, paid) vision
+    # model. Video frame sampling/extraction is out of scope for this
+    # scaffold — see docs/plan.md's capture-and-feedback section.
     if accepted and kind in ANALYZED_KINDS:
         _analyze_and_record(db, session, media, component_hint)
 
@@ -111,8 +114,24 @@ def _analyze_and_record(
     media: models.MediaItem,
     component_hint: str | None,
 ) -> None:
-    adapter = get_vision_adapter()
-    vision_result = adapter.analyze_image(media.file_path, component_hint)
+    """Runs the vision adapter and turns its output into evidence records
+    and findings. Milestone 3: a missing credential, a timeout, or a
+    malformed response from the model must never crash the request or get
+    treated as successful analysis — it's recorded as vision_status="failed"
+    so the caller (and the evidence gate) can tell the difference between
+    "no evidence yet" and "we don't actually know, ask again."
+    """
+    try:
+        adapter = get_vision_adapter()
+        vision_result = adapter.analyze_image(media.file_path, component_hint)
+    except Exception as exc:
+        media.vision_status = "failed"
+        media.quality_notes = [*media.quality_notes, f"vision_analysis_failed: {exc}"]
+        db.add(media)
+        db.commit()
+        return
+
+    media.vision_status = "ok"
 
     if not vision_result.is_vehicle:
         media.accepted = False
@@ -121,10 +140,47 @@ def _analyze_and_record(
         media.accepted = False
         media.reject_reason = f"not_a_tractor_unit:{vision_result.vehicle_category_guess or 'unknown'}"
     else:
-        if vision_result.vehicle_category_guess and not media.component_tag:
+        media.structural_damage_suspected = vision_result.structural_damage_suspected
+        media.tire_concern_noted = vision_result.tire_concern_noted
+        if not media.component_tag:
             media.component_tag = component_hint
-        for field, value in vision_result.extracted_specs.items():
-            db.add(models.DeclaredDetail(session_id=session.id, field=field, value=value, source="extracted"))
+
+        db.add(
+            models.EvidenceRecord(
+                session_id=session.id,
+                field="vehicle_category",
+                value=vision_result.vehicle_category_guess or "unknown",
+                provenance="observed_from_photo",
+                media_id=media.id,
+            )
+        )
+
+        # A legible badge/spec-plate reading is trustworthy observed
+        # evidence; a visual guess without one is only a candidate — the
+        # evidence gate treats these very differently (see services/gate.py).
+        if vision_result.model_guess:
+            provenance = "observed_from_photo" if vision_result.visible_badge_text else "inferred_candidate"
+            db.add(
+                models.EvidenceRecord(
+                    session_id=session.id,
+                    field="model_family",
+                    value=vision_result.model_guess,
+                    provenance=provenance,
+                    media_id=media.id,
+                )
+            )
+
+        for spec_field, value in vision_result.extracted_specs.items():
+            db.add(
+                models.EvidenceRecord(
+                    session_id=session.id,
+                    field=spec_field,
+                    value=value,
+                    provenance="observed_from_photo",
+                    media_id=media.id,
+                )
+            )
+
         for obs in vision_result.component_observations:
             db.add(
                 models.Finding(

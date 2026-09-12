@@ -18,7 +18,7 @@ REQUIRED_COMPONENTS = [
 
 COVERAGE_MISSING = "missing"
 COVERAGE_CAPTURED = "captured"
-COVERAGE_ATTENTION = "attention"  # captured but flagged (poor quality / suspected damage)
+COVERAGE_ATTENTION = "attention"  # captured but flagged (poor quality / suspected damage / analysis failed)
 
 APPRAISAL_STATUSES = [
     "priced",
@@ -26,4 +26,21 @@ APPRAISAL_STATUSES = [
     "unsupported",
     "insufficient_market_data",
     "inspection_required",
+]
+
+# Evidence provenance — see app/services/evidence.py. Every fact about the
+# vehicle is tagged with exactly one of these when it's recorded.
+PROVENANCE_SELLER_DECLARED = "seller_declared"
+PROVENANCE_OBSERVED_FROM_PHOTO = "observed_from_photo"
+PROVENANCE_INFERRED_CANDIDATE = "inferred_candidate"
+
+# Fields the evidence gate resolves and exposes on every session — see
+# GET /sessions/{id}'s `evidence` list.
+TRACKED_EVIDENCE_FIELDS = [
+    "vehicle_category",
+    "model_family",
+    "axle_config",
+    "year",
+    "mileage_km",
+    "vat_basis",
 ]

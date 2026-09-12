@@ -23,7 +23,7 @@ class InspectionSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     media_items: Mapped[list["MediaItem"]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    details: Mapped[list["DeclaredDetail"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    evidence_records: Mapped[list["EvidenceRecord"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     findings: Mapped[list["Finding"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     appraisals: Mapped[list["Appraisal"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
@@ -44,23 +44,40 @@ class MediaItem(Base):
     quality_notes: Mapped[list] = mapped_column(JSON, default=list)
     perceptual_hash: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Whether the vision model call for this photo actually completed.
+    # "pending" until analysis runs, "ok" once structured evidence was
+    # extracted, "failed" on a recoverable API/parsing error (Milestone 3 —
+    # a failure must never silently masquerade as a successful analysis).
+    vision_status: Mapped[str] = mapped_column(String, default="pending")
+    structural_damage_suspected: Mapped[bool] = mapped_column(Boolean, default=False)
+    tire_concern_noted: Mapped[bool] = mapped_column(Boolean, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     session: Mapped[InspectionSession] = relationship(back_populates="media_items")
 
 
-class DeclaredDetail(Base):
-    __tablename__ = "declared_details"
+class EvidenceRecord(Base):
+    """One provenanced fact about the vehicle. Never overwritten or deleted —
+    conflicting facts about the same field simply accumulate, and
+    app.services.evidence.resolve_field() decides (at read time) whether
+    they agree, conflict, or leave the field unknown. This is what lets the
+    evidence gate say "seller declared 250,000 km but the dashboard shows
+    650,000 km" instead of silently picking one."""
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id("det"))
+    __tablename__ = "evidence_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id("ev"))
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"))
 
-    field: Mapped[str] = mapped_column(String)
+    field: Mapped[str] = mapped_column(String)  # e.g. "mileage_km", "model_family", "axle_config", "year"
     value: Mapped[str] = mapped_column(String)
-    source: Mapped[str] = mapped_column(String)  # seller_declared | extracted | confirmed
+    provenance: Mapped[str] = mapped_column(String)  # seller_declared | observed_from_photo | inferred_candidate
+    media_id: Mapped[str | None] = mapped_column(ForeignKey("media_items.id"), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    session: Mapped[InspectionSession] = relationship(back_populates="details")
+    session: Mapped[InspectionSession] = relationship(back_populates="evidence_records")
 
 
 class Finding(Base):
@@ -125,7 +142,8 @@ class Appraisal(Base):
     currency: Mapped[str] = mapped_column(String, default="TRY")
 
     comparable_count: Mapped[int] = mapped_column(Integer, default=0)
-    comparables: Mapped[list] = mapped_column(JSON, default=list)  # [{listing_id, similarity_weight}]
+    comparables: Mapped[list] = mapped_column(JSON, default=list)  # enriched comparable records, see routers/appraisals.py
+    matched_attributes: Mapped[dict] = mapped_column(JSON, default=dict)  # the VehicleSpec actually used to query
     reasons: Mapped[list] = mapped_column(JSON, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
