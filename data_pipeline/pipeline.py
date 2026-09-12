@@ -29,9 +29,17 @@ def _dedupe_key(record: ListingRecord) -> tuple:
 
 def clean_and_dedupe(records: Iterable[ListingRecord]) -> Iterator[ListingRecord]:
     seen = set()
+    seen_listing_ids = set()
     for record in records:
         if record.validate():
             continue
+        # A repeated listing id from the same source is the same vehicle,
+        # full stop — stronger evidence than the fuzzy attribute key below.
+        if record.listing_id:
+            source_key = (record.source, record.listing_id)
+            if source_key in seen_listing_ids:
+                continue
+            seen_listing_ids.add(source_key)
         key = _dedupe_key(record)
         if key in seen:
             continue

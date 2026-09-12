@@ -45,6 +45,14 @@ class ListingRecord:
     vat_basis: str  # one of VALID_VAT_BASES
     category: str = "tractor_unit"
     country: str = "TR"
+    # Which adapter produced this row, and the source site's own listing id —
+    # kept so any record can be traced back to the exact page it came from
+    # and so reposts of the same listing id are detectable.
+    source: str = "unknown"
+    listing_id: str | None = None
+    # The raw vehicle-type label as the source site wrote it (e.g. "Çekici"),
+    # kept alongside the normalized `category` rather than replaced by it.
+    vehicle_type: str | None = None
     listing_date: str | None = None
     collected_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     image_refs: list[str] = field(default_factory=list)

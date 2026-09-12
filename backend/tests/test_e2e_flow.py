@@ -32,7 +32,10 @@ def _seed_listings(n=6, **overrides):
                 axle_config="4x2",
                 price=900_000 + i * 15_000,
                 currency="TRY",
-                vat_basis="vat_excluded",
+                # Real collected listings (truckmarket.com.tr) don't publish a
+                # VAT basis, so "unknown" is the realistic default here — and
+                # a session that declares no basis matches only these.
+                vat_basis="unknown",
                 partition="dev",
             )
             defaults.update(overrides)
@@ -175,6 +178,39 @@ def test_f_insufficient_comparables(client, monkeypatch, tmp_path):
     appraisal = client.post(f"/sessions/{session_id}/appraisals").json()
     assert appraisal["status"] == "insufficient_market_data"
     assert appraisal["price_mid"] is None
+
+
+def test_f2_sparse_model_family_is_not_priced_off_other_families(client, monkeypatch, tmp_path):
+    """A dense pool of one family must not be borrowed to price a different
+    family — the comparable filter is a hard filter, not a preference."""
+    _seed_listings(n=20, model_family="f-max", make="FORD", model="F-MAX")
+    session_id = client.post("/sessions").json()["id"]
+    patch_vision_adapter(
+        monkeypatch,
+        lambda path, hint: truck_result(
+            model_guess="actros",  # a family with no listings at all
+            extracted_specs={"axle_config": "4x2", "year": "2019", "mileage_km": "480000"},
+        ),
+    )
+    upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
+
+    appraisal = client.post(f"/sessions/{session_id}/appraisals").json()
+    assert appraisal["status"] == "insufficient_market_data"
+    assert appraisal["price_mid"] is None
+
+
+def test_f3_incompatible_vat_basis_never_mixes_into_the_pool(client, monkeypatch, tmp_path):
+    """Listings whose tax basis differs from the vehicle being priced must
+    never enter the same comparable pool, even when everything else matches
+    and the pool would otherwise be dense enough to price."""
+    _seed_listings(n=20, vat_basis="vat_included")
+    session_id = client.post("/sessions").json()["id"]
+    _resolve_identity_and_mileage(client, monkeypatch, tmp_path, session_id)
+    # Session declares nothing about VAT -> resolves to "unknown", which must
+    # not match the 20 seeded "vat_included" listings.
+    appraisal = client.post(f"/sessions/{session_id}/appraisals").json()
+    assert appraisal["status"] == "insufficient_market_data"
+    assert appraisal["comparable_count"] == 0
 
 
 # G. missing tire image remains unknown ------------------------------------------------------

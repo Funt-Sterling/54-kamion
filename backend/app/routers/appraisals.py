@@ -114,7 +114,12 @@ def create_appraisal(session_id: str, db: Session = Depends(get_db)):
             axle_config=axle_config.value,
             year=int(year.value),
             mileage_km=int(decision.mileage.value),
-            vat_basis=vat_basis.value or "vat_excluded",
+            # When the seller hasn't stated a VAT basis, match against
+            # listings whose basis is equally unstated rather than assuming
+            # one. find_comparables() filters on equality, so "unknown" only
+            # ever matches "unknown" — an undeclared truck is never priced
+            # off VAT-inclusive listings (or vice versa) by accident.
+            vat_basis=vat_basis.value or "unknown",
         )
     except (TypeError, ValueError) as exc:
         appraisal = _save(

@@ -6,23 +6,39 @@ Collects, cleans, deduplicates, and partitions Turkish used tractor-unit
 table. See `docs/plan.md` section 3 for the full data collection rules this
 implements.
 
-## Candidate sources (researched, not yet scraped — see caveat below)
+## Source bake-off (fetched and verified 2026-09-12)
 
-**This sandbox cannot reach the public internet** — outbound HTTPS to every
-classifieds domain tried (arabam.com, truck1.com.tr, even google.com) was
-rejected at the egress proxy level with `connect_rejected (organization
-policy)`, confirmed via direct `curl`. So none of the below has been fetched
-or verified against a live page; it's from search-snippet research only.
-**Whoever runs this next needs to do a 2-minute manual robots.txt/ToS check
-before scraping anything, on a network that can actually reach these
-sites.**
+Earlier notes here were written in a network-sandboxed environment and could
+only guess. These numbers come from actually fetching the pages.
 
-| Source | Recommendation | Why |
+| Source | Verdict | Evidence |
 |---|---|---|
-| **arabam.com** → `/ikinci-el/ticari-arac/cekici` | Build here first | Largest apparent Turkish-only çekici inventory (thousands of listings site-wide, dedicated çekici pages), all Turkey-located — doesn't have Truck1's foreign-inventory mixing problem. No explicit scraping ban surfaced in search snippets, but **unconfirmed** — it's a major commercial platform, likely has bot protection; check robots.txt/ToS first. |
-| **OEM certified-used portals** — TruckMarket (Ford Trucks, truckmarket.com.tr), TruckStore (Mercedes-Benz Türk, truckstore.com/TR) | Build in parallel, lowest legal risk | Manufacturers' own retail channels, not third-party classifieds — no aggregator ToS conflict. Clean per-vehicle pages. Downside: small volume per brand (dozens, not hundreds) — combine 2-3 OEM portals to add meaningful volume alongside arabam.com. |
-| Truck1.com.tr / via-kamyon.com | Deprioritize | Pan-European aggregators; Turkey is one filter among many countries, and these typically license their listing data to dealers — a strong signal their ToS restricts scraping. |
-| sahibinden.com | **Excluded** | [ToS](https://www.sahibinden.com/sozlesmeler/bireysel-hesap-sozlesmesi-0) explicitly restricts collection and AI use — see `docs/plan.md`. |
+| **truckmarket.com.tr** (Ford Trucks Türkiye certified-used) | **SELECTED — implemented in `sources/truckmarket_adapter.py`** | 218 listings on a single `/arac-listesi` page, no pagination. Every detail page carries explicit `Araç Tipi` (Çekici), `Şehir` (city), `Çekiş Tipi` (4x2/6x2/6x4), `Model Yılı`, `Km` and a ₺ price. Stable integer listing ids (`/arac-detay/13824`). Plain HTTP fetch with an honest User-Agent works — **no anti-bot evasion needed or used**. Turkey-located by construction (OEM's domestic retail channel). |
+| **truck1.com.tr** | Rejected for P0 | Turkey is a minority of its inventory. Country mentions on the çekici page: Hollanda 26, Türkiye 9, Belçika 7, Polonya 5, Almanya 3, plus FR/LT/RO/ES/IT. Confirms the pan-European mixing problem — usable later only with strict location filtering. |
+| `truck1-tr.com` | Does not exist | TLS fails: `no alternative certificate subject name matches`. An earlier research pass recommended this hostname; it is not a real site. The real host is `www.truck1.com.tr`. |
+| **arabam.com** | Deferred | Its `robots.txt` itself returns a Cloudflare JS challenge to a plain request, so even reading the crawl rules requires passing bot management. Would need a headless browser + proxies. Out of scope: we don't implement evasion. |
+| sahibinden.com | **Excluded** | [ToS](https://www.sahibinden.com/sozlesmeler/bireysel-hesap-sozlesmesi-0) explicitly restricts collection and AI use. |
+| `seralifatih/Turkish-Automotive-Intelligence-Suite` | Not used | Passenger-cars only (`/ikinci-el/otomobil/`), no truck/çekici path, no LICENSE file, 0 stars/forks, and its distinguishing code is Sahibinden bot-defense evasion. |
+
+### Legal/etiquette note on truckmarket.com.tr
+
+`https://www.truckmarket.com.tr/robots.txt` returns the site's branded 404 —
+**no robots.txt exists**, so there is no machine-readable crawl directive to
+honour or violate. No terms-of-use or KVKK link was discoverable in the page
+markup either. Absence of a prohibition is **not** the same as explicit
+permission, so the adapter stays deliberately conservative: one request at a
+time, 1.5s apart, honest self-identifying User-Agent, a single one-off
+collection run rather than continuous monitoring, and no evasion of any kind.
+If the site ever starts challenging requests, that's a signal to stop and ask,
+not to work around.
+
+### VAT basis
+
+truckmarket does not publish a VAT/tax basis per listing, so every record
+from it is `vat_basis="unknown"`. That is deliberate and must not be
+"filled in" — the pricing engine compares only listings that share a basis,
+so unknown matches unknown and can never silently merge with a
+VAT-inclusive listing from a future source.
 
 ## The three ways to get to 50+ records (plan's hour-4 checkpoint)
 
