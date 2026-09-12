@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Env / secrets
+.env
+*.env.local
+
+# SQLite + media (never commit collected photos or the demo DB)
+*.db
+*.sqlite3
+backend/media/
+media/
+
+# data_pipeline output (regenerate, don't commit scraped/collected data)
+data_pipeline/output/
+
+# Node / mobile (once frontend work starts)
+node_modules/
+.expo/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

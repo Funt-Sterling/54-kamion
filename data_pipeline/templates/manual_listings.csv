@@ -1,0 +1,2 @@
+source_url,location,country,make,model,model_family,category,year,mileage_km,axle_config,price,currency,vat_basis,listing_date,image_refs
+https://example.com/REPLACE_ME,"Istanbul, TR",TR,Mercedes-Benz,Actros 1845,actros,tractor_unit,2019,480000,4x2,1250000,TRY,vat_excluded,2026-08-01,https://example.com/img1.jpg|https://example.com/img2.jpg
