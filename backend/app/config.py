@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # hanging the request or inventing evidence.
     vision_timeout_seconds: float = 45.0
     vision_max_retries: int = 1
+    # A detailed walkaround photo can produce a dozen observations; at 1024
+    # the JSON gets cut mid-string and the whole analysis is discarded as
+    # malformed. Headroom is far cheaper than a lost photo.
+    vision_max_tokens: int = 4096
 
     max_upload_mb: int = 25
 

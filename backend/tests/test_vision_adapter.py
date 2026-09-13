@@ -62,6 +62,18 @@ def test_fenced_json_is_accepted():
     assert result.is_truck_tractor_unit is True
 
 
+def test_truncated_response_is_rejected_not_half_parsed():
+    """Observed against the live API: a photo with many visible components
+    ran past max_tokens and the JSON was cut mid-string. Half a response
+    must never become half an analysis."""
+    truncated = (
+        '{"is_vehicle": true, "is_truck_tractor_unit": true, '
+        '"component_observations": [{"component": "grille", "observation": "Black grille with'
+    )
+    with pytest.raises(VisionResponseError):
+        parse(truncated)
+
+
 # --- the model may never contribute a price -----------------------------------------
 
 

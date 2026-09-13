@@ -135,6 +135,7 @@ class AnthropicVisionAdapter(VisionAdapter):
             default_headers=default_headers,
         )
         self._model = settings.vision_model
+        self._max_tokens = settings.vision_max_tokens
 
     def analyze_image(self, image_path, component_hint=None):
         path = Path(image_path)
@@ -143,7 +144,7 @@ class AnthropicVisionAdapter(VisionAdapter):
 
         message = self._client.messages.create(
             model=self._model,
-            max_tokens=1024,
+            max_tokens=self._max_tokens,
             messages=[
                 {
                     "role": "user",
@@ -154,6 +155,14 @@ class AnthropicVisionAdapter(VisionAdapter):
                 }
             ],
         )
+
+        # A truncated response is unparseable JSON, but "Unterminated string
+        # at line 22" is a misleading way to learn the budget ran out.
+        if getattr(message, "stop_reason", None) == "max_tokens":
+            raise VisionResponseError(
+                f"response hit the {self._max_tokens}-token limit and was cut off before the JSON closed"
+            )
+
         raw = "".join(block.text for block in message.content if block.type == "text")
         return self._parse(raw)
 
@@ -185,8 +194,9 @@ class AnthropicVisionAdapter(VisionAdapter):
             "if a registration/build plate shows it, or {\"axle_config\": \"4x2\"} if countable "
             "from a full side/rear view — omit any field you cannot actually read)\n"
             "- component_observations (array of {component, observation, visibility, "
-            "recommended_action}; one entry per distinct thing you can say something concrete "
-            "about; recommended_action is 'none' unless a retake/closer photo would help)\n"
+            "recommended_action}; AT MOST 8 entries covering the most decision-relevant "
+            "things visible, one per component; keep each observation to one sentence; "
+            "recommended_action is 'none' unless a retake/closer photo would help)\n"
             "- quality_issues (array of strings, e.g. 'too_dark', 'too_blurry', 'obstructed')\n"
             "- notes (short string)\n\n"
             "Never write 'mechanically sound' or invent a condition score. If you cannot tell "
