@@ -18,6 +18,13 @@ def _get_session_or_404(db: Session, session_id: str) -> models.InspectionSessio
     return session
 
 
+def _canonical(value: str | None) -> str | None:
+    """Match the lowercase slug convention data_pipeline writes for
+    model_family/axle_config, so a badge Claude reads as "F-MAX" finds the
+    "f-max" comparables. Case only — nothing else about the value changes."""
+    return value.strip().lower() if isinstance(value, str) else value
+
+
 def _comparable_dict(listing: models.Listing, weight: float) -> dict:
     return {
         "listing_id": listing.id,
@@ -110,8 +117,12 @@ def create_appraisal(session_id: str, db: Session = Depends(get_db)):
     try:
         spec = pricing.VehicleSpec(
             category="tractor_unit",
-            model_family=decision.identity["model_family"].value,
-            axle_config=axle_config.value,
+            # Canonicalized for lookup only — the stored evidence keeps what
+            # the source actually said ("F-MAX" as Claude read it off the
+            # badge), while the comparable pool is keyed on the same
+            # lowercase slug data_pipeline writes ("f-max").
+            model_family=_canonical(decision.identity["model_family"].value),
+            axle_config=_canonical(axle_config.value),
             year=int(year.value),
             mileage_km=int(decision.mileage.value),
             # When the seller hasn't stated a VAT basis, match against

@@ -14,7 +14,15 @@ class Settings(BaseSettings):
     # and is what should be used for the actual judged demo.
     vision_adapter: str = "mock"
     anthropic_api_key: str | None = None
+    # Organization-scoped API keys must name the workspace to bill/run in;
+    # workspace-scoped keys don't need this and can leave it empty.
+    anthropic_workspace_id: str | None = None
     vision_model: str = "claude-sonnet-5"
+    # A photo upload waits on this call, so it must be bounded: on timeout
+    # the media item is kept and marked vision_status="failed" rather than
+    # hanging the request or inventing evidence.
+    vision_timeout_seconds: float = 45.0
+    vision_max_retries: int = 1
 
     max_upload_mb: int = 25
 
