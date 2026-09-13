@@ -10,18 +10,24 @@
 import type {
   Appraisal,
   CoverageState,
+  EvidenceParticipant,
   FieldEvidence,
   FieldStatus,
   Finding,
   MediaResult,
+  ObservedView,
 } from "@/api/types";
+import { participants } from "@/lib/contract";
 
 /** Friendly labels for provenance — internal enum names never reach the UI. */
 const STATUS_LABELS: Record<FieldStatus, string> = {
   observed_from_photo: "Seen in photo",
   seller_declared: "Seller provided",
   inferred_candidate: "Visual guess",
-  confirmed: "Confirmed",
+  user_corrected: "User corrected",
+  // Agreement between sources is corroboration, never verification.
+  sources_agree: "Sources agree",
+  confirmed: "Sources agree",
   conflicting: "Conflict",
   unknown: "Unknown",
 };
@@ -30,15 +36,35 @@ export function provenanceLabel(status: FieldStatus): string {
   return STATUS_LABELS[status] ?? "Unknown";
 }
 
+/**
+ * Label for one participant's source. Same vocabulary as the field status,
+ * but reached from a raw string: a participant list can carry a provenance
+ * this build has never heard of, and an unrecognised source must be shown
+ * as unrecognised rather than silently dropped from a conflict.
+ */
+export function sourceLabel(provenance: string): string {
+  return STATUS_LABELS[provenance as FieldStatus] ?? humanize(provenance);
+}
+
+/** Why a participant is no longer active. Blank when it still is. */
+export function participantStateLabel(participant: EvidenceParticipant): string {
+  if (participant.state === "superseded") return "Superseded";
+  if (participant.state === "disputed") return "Disputed";
+  if (participant.state === "legacy_unverified") return "Not verified (older analysis)";
+  return "";
+}
+
 export type StatusTone = "good" | "info" | "warn" | "muted";
 
 export function statusTone(status: FieldStatus): StatusTone {
   switch (status) {
+    case "sources_agree":
     case "confirmed":
       return "good";
     case "observed_from_photo":
       return "info";
     case "seller_declared":
+    case "user_corrected":
     case "inferred_candidate":
       return "warn";
     case "conflicting":
@@ -50,7 +76,9 @@ export function statusTone(status: FieldStatus): StatusTone {
 
 const FIELD_LABELS: Record<string, string> = {
   vehicle_category: "Vehicle type",
+  make: "Make",
   model_family: "Model family",
+  visible_axle_count: "Visible axles",
   axle_config: "Axle configuration",
   year: "Model year",
   mileage_km: "Mileage",
@@ -73,7 +101,45 @@ const COMPONENT_LABELS: Record<string, string> = {
 };
 
 export function componentLabel(component: string): string {
-  return COMPONENT_LABELS[component] ?? humanize(component);
+  return COMPONENT_LABELS[component] ?? VIEW_LABELS[component] ?? humanize(component);
+}
+
+/**
+ * The contract's view vocabulary (contract.ALL_VIEWS) — what a photo can
+ * be found to SHOW, as opposed to the checklist component it may credit.
+ * Kept separate from COMPONENT_LABELS so the UI can put "you were asked
+ * for the front exterior" and "a tire was detected" side by side without
+ * the two vocabularies blurring into one another.
+ */
+const VIEW_LABELS: Record<string, string> = {
+  front: "Front",
+  rear: "Rear",
+  side: "Side",
+  tire: "Tire",
+  dashboard: "Dashboard",
+  odometer: "Odometer",
+  cab: "Cab interior",
+  chassis: "Chassis",
+  badge: "Badge / plate",
+};
+
+export function viewLabel(view: string): string {
+  return VIEW_LABELS[view] ?? humanize(view);
+}
+
+/**
+ * One detected view, with its qualification attached. "Tire (partly
+ * visible)" is a different claim from "Tire", and an unusable view is not
+ * a detection the user can rely on at all.
+ */
+export function observedViewLabel(view: ObservedView): string {
+  const base = viewLabel(view.view);
+  if (view.usable === false) {
+    return view.limitation ? `${base} — not usable: ${view.limitation}` : `${base} — not usable`;
+  }
+  if (view.limitation) return `${base} — ${view.limitation}`;
+  if (view.visibility === "unclear") return `${base} — unclear`;
+  return base;
 }
 
 function humanize(value: string): string {
@@ -163,24 +229,56 @@ export const COVERAGE_ORDER = [
 
 /**
  * The gate answers with the *field* a photo would resolve
- * ("axle_config", "vehicle_identity"), but coverage is tracked by the
- * physical view a photo shows ("side_exterior"). Uploading with the raw
- * field as the component hint leaves coverage permanently empty — the
- * appraisal then claims the front was never photographed immediately
- * after the user photographed it. This maps request to view.
+ * ("axle_config", "vehicle_identity"); the request the user sees is
+ * phrased as a physical view ("side_exterior"). This maps one to the
+ * other so the upload can say what was ASKED for.
+ *
+ * That is the whole of its job. It used to double as the thing that
+ * decided which coverage slot a photo credited — the client naming the
+ * slot, the server storing the name, the UI reading it back as though a
+ * view had been detected. Coverage now comes only from the server's
+ * observed views, so this value is request metadata and nothing else: the
+ * server uses it solely to report afterwards whether the request was
+ * answered, and no screen may present it as a detection.
  */
-const RESOLVES_TO_COMPONENT: Record<string, string> = {
-  vehicle_identity: "front_exterior",
-  model_family: "front_exterior",
-  year: "front_exterior",
-  axle_config: "side_exterior",
-  mileage_km: "dashboard_odometer",
-};
+const REQUEST_SLOTS = new Set<string>([
+  // Gate targets the server accepts as request slots directly, so a badge
+  // close-up asked for as "model_family" is judged against the badge view
+  // rather than a front exterior it was never meant to show.
+  "vehicle_identity",
+  "model_family",
+  "year",
+  "axle_config",
+  "mileage_km",
+  // Contract views, used by clarify-concern close-up requests.
+  "front",
+  "rear",
+  "side",
+  "dashboard",
+  "odometer",
+  "cab",
+  "chassis",
+  "badge",
+]);
 
-export function captureHintFor(resolves: string | undefined): string | undefined {
+export function requestedComponentFor(resolves: string | undefined): string | undefined {
   if (!resolves) return undefined;
-  if (COVERAGE_ORDER.includes(resolves)) return resolves;
-  return RESOLVES_TO_COMPONENT[resolves];
+  if (COVERAGE_ORDER.includes(resolves) || REQUEST_SLOTS.has(resolves)) return resolves;
+  return undefined;
+}
+
+/**
+ * Names every source actually disagreeing, not just the seller/photo pair.
+ * A field conflicted by an inferred candidate used to render as two
+ * dashes, which told the reader a conflict existed while hiding what it
+ * was between.
+ */
+export function describeConflict(evidence: FieldEvidence): string {
+  const active = participants(evidence);
+  if (active.length === 0) return "no source values recorded";
+  return active
+    .map((participant) => `${sourceLabel(participant.provenance)}: ${participant.display_value}`)
+    .join(", ");
 }
 
 /**
@@ -197,9 +295,7 @@ export function deriveUnknowns(
     if (field.status === "unknown") {
       unknowns.push(`${fieldLabel(field.field)} not established from any source`);
     } else if (field.status === "conflicting") {
-      unknowns.push(
-        `${fieldLabel(field.field)} disputed — seller says ${field.seller_declared ?? "—"}, photo shows ${field.observed_from_photo ?? "—"}`,
-      );
+      unknowns.push(`${fieldLabel(field.field)} disputed — ${describeConflict(field)}`);
     }
   }
 
@@ -208,7 +304,9 @@ export function deriveUnknowns(
     if (state === "missing") {
       unknowns.push(`${componentLabel(component)} not photographed — condition not assessed`);
     } else if (state === "attention") {
-      unknowns.push(`${componentLabel(component)} photo needs a retake — not yet assessed`);
+      // "attention" covers a partial view (an odometer crop is not the whole
+      // dashboard) as well as a flagged one; neither means the photo failed.
+      unknowns.push(`${componentLabel(component)} only partly assessed — a clearer or wider photo would help`);
     }
   }
 
@@ -240,6 +338,9 @@ export function splitFindings(findings: Finding[]): { observed: Finding[]; limit
 export function humanizeReason(reason: string): string {
   let text = reason;
   for (const [field, label] of Object.entries(FIELD_LABELS)) {
+    // Only snake_case keys: plain words such as "year" or "make" are
+    // already prose, and rewriting them produced "model model year".
+    if (!field.includes("_")) continue;
     text = text.replace(new RegExp(`\\b${field}\\b`, "g"), label.toLowerCase());
   }
   return text.charAt(0).toUpperCase() + text.slice(1);

@@ -3,14 +3,16 @@ import { describe, expect, it } from "vitest";
 import type { Appraisal, CoverageState, FieldEvidence, Finding, MediaResult } from "@/api/types";
 import {
   appraisalMessage,
-  captureHintFor,
   deriveUnknowns,
+  describeConflict,
   displayValue,
   formatTRY,
   humanizeReason,
   needsReanalysis,
   provenanceLabel,
   rejectionMessage,
+  requestedComponentFor,
+  sourceLabel,
   splitFindings,
 } from "@/lib/format";
 
@@ -22,6 +24,9 @@ function evidence(overrides: Partial<FieldEvidence> & { field: string }): FieldE
     observed_from_photo: null,
     inferred_candidates: [],
     supporting_media_id: null,
+    participants: [],
+    canonical_value: null,
+    superseded: [],
     ...overrides,
   };
 }
@@ -33,9 +38,12 @@ function media(overrides: Partial<MediaResult> = {}): MediaResult {
     kind: "photo",
     accepted: true,
     reject_reason: null,
-    component_tag: null,
     quality_notes: [],
     vision_status: "ok",
+    requested_view: null,
+    observed_views: [],
+    capture_origin: "unknown",
+    requested_view_satisfied: null,
     ...overrides,
   };
 }
@@ -44,7 +52,10 @@ describe("provenance labels", () => {
   it("never leaks internal enum names to the UI", () => {
     expect(provenanceLabel("observed_from_photo")).toBe("Seen in photo");
     expect(provenanceLabel("seller_declared")).toBe("Seller provided");
-    expect(provenanceLabel("confirmed")).toBe("Confirmed");
+    // Agreement between sources is corroboration, never "confirmed"/"verified".
+    expect(provenanceLabel("sources_agree")).toBe("Sources agree");
+    expect(provenanceLabel("confirmed")).toBe("Sources agree");
+    expect(provenanceLabel("user_corrected")).toBe("User corrected");
     expect(provenanceLabel("conflicting")).toBe("Conflict");
     expect(provenanceLabel("unknown")).toBe("Unknown");
   });
@@ -174,25 +185,44 @@ describe("humanizeReason", () => {
   });
 });
 
-describe("captureHintFor", () => {
-  it("maps the gate's field request onto the physical view it needs", () => {
-    // Without this, a photo answering "axle_config" is tagged with a value
-    // that isn't a coverage slot, and the appraisal goes on claiming the
-    // side profile was never photographed.
-    expect(captureHintFor("axle_config")).toBe("side_exterior");
-    expect(captureHintFor("vehicle_identity")).toBe("front_exterior");
-    expect(captureHintFor("model_family")).toBe("front_exterior");
-    expect(captureHintFor("mileage_km")).toBe("dashboard_odometer");
+describe("requestedComponentFor", () => {
+  it("sends the gate's own target, so a badge close-up is judged against the badge", () => {
+    expect(requestedComponentFor("model_family")).toBe("model_family");
+    expect(requestedComponentFor("mileage_km")).toBe("mileage_km");
+    expect(requestedComponentFor("axle_config")).toBe("axle_config");
   });
 
-  it("passes through values that are already coverage components", () => {
-    expect(captureHintFor("tire")).toBe("tire");
-    expect(captureHintFor("chassis_suspension")).toBe("chassis_suspension");
+  it("passes through checklist components and contract views", () => {
+    expect(requestedComponentFor("tire")).toBe("tire");
+    expect(requestedComponentFor("chassis")).toBe("chassis");
   });
 
-  it("returns undefined when there is nothing to tag", () => {
-    expect(captureHintFor(undefined)).toBeUndefined();
-    expect(captureHintFor("something_unmapped")).toBeUndefined();
+  it("returns undefined when there is nothing to request", () => {
+    expect(requestedComponentFor(undefined)).toBeUndefined();
+    expect(requestedComponentFor("something_unmapped")).toBeUndefined();
+  });
+});
+
+describe("conflict participants (case 14)", () => {
+  it("names every active source, including a visual guess the old UI dropped", () => {
+    const conflicted = evidence({
+      field: "model_family",
+      status: "conflicting",
+      seller_declared: "F-MAX",
+      participants: [
+        { provenance: "seller_declared", raw_value: "F-MAX", canonical_value: "f-max", display_value: "F-MAX", media_id: null, state: "active", state_reason: null },
+        { provenance: "inferred_candidate", raw_value: "R-series", canonical_value: "r-series", display_value: "R-series", media_id: "m1", state: "active", state_reason: null },
+      ],
+    });
+    const text = describeConflict(conflicted);
+    expect(text).toContain("Seller provided: F-MAX");
+    expect(text).toContain("Visual guess: R-series");
+  });
+
+  it("labels a user correction distinctly from a seller claim", () => {
+    expect(sourceLabel("user_corrected")).toBe("User corrected");
+    expect(sourceLabel("seller_declared")).toBe("Seller provided");
+    expect(sourceLabel("some_future_source")).toBe("Some future source");
   });
 });
 
@@ -243,6 +273,10 @@ describe("appraisalMessage", () => {
       findings: [],
       reasons: [],
       next_photo: null,
+      evidence_revision: 1,
+      method_note: "",
+      tax_note: "",
+      distinct_vehicle_groups: 0,
       ...overrides,
     };
   }
@@ -267,5 +301,18 @@ describe("appraisalMessage", () => {
 
   it("explains a withheld price for suspected damage", () => {
     expect(appraisalMessage(appraisal({ status: "inspection_required" })).title).toMatch(/inspection/i);
+  });
+});
+
+describe("review copy regressions", () => {
+  it("does not rewrite plain words in backend prose", () => {
+    expect(humanizeReason("model year 2021 as declared by the seller")).toBe("Model year 2021 as declared by the seller");
+  });
+
+  it("describes a partial view as partial, not as a failed photo", () => {
+    const unknowns = deriveUnknowns({ dashboard_odometer: "attention" } as Record<string, CoverageState>, []);
+    const line = unknowns.find((u) => u.startsWith("Dashboard"));
+    expect(line).toMatch(/partly assessed/);
+    expect(line).not.toMatch(/retake/i);
   });
 });

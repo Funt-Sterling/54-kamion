@@ -31,3 +31,12 @@ build/
 
 # Never release: v1 Figma export, kept local-only until redone
 DO NOT RELEASE/
+
+# DB backups written by backend/scripts/migrate_evidence_contract.py
+*.db.backup-*
+*.db.pre-contract-*
+
+# Visual evaluation: permissioned private images and paid-run outputs stay local
+evaluation/visual/images/
+evaluation/visual/runs/
+evaluation/visual/prices.json

@@ -1,7 +1,9 @@
 import { useState } from "react";
 
 import type { Appraisal, Comparable, Finding, SessionDetail } from "@/api/types";
-import { BackButton, Panel } from "@/components/atoms";
+import { BackButton, ErrorBanner, Panel } from "@/components/atoms";
+import { rangeFreshness } from "@/lib/contract";
+import type { BusyState } from "@/lib/progress";
 import {
   appraisalMessage,
   componentLabel,
@@ -22,36 +24,73 @@ import {
 export function AppraisalScreen({
   appraisal,
   session,
+  sessionStale,
+  onRefresh,
+  busy,
+  error,
   onBack,
   onImprove,
   onFindingTap,
 }: {
   appraisal: Appraisal;
   session: SessionDetail;
+  /** The last session refresh failed, so currency cannot be confirmed. */
+  sessionStale: boolean;
+  onRefresh: () => void;
+  busy: BusyState | null;
+  error: string | null;
   onBack: () => void;
   onImprove: () => void;
   onFindingTap: (finding: Finding) => void;
 }) {
   const [comparablesOpen, setComparablesOpen] = useState(true);
-  const priced = appraisal.status === "priced" && appraisal.price_low !== null && appraisal.price_high !== null;
+  const hasRange =
+    appraisal.status === "priced" &&
+    Number.isFinite(appraisal.price_low) &&
+    Number.isFinite(appraisal.price_high) &&
+    appraisal.price_low !== null &&
+    appraisal.price_high !== null;
+  // A range computed from older evidence is not the current answer.
+  const freshness = rangeFreshness(appraisal, session);
+  const stale = freshness === "stale";
+  const unconfirmed = !stale && (sessionStale || freshness === "unknown");
+  const priced = hasRange && !stale;
   const { observed, limited } = splitFindings(appraisal.findings);
   const unknowns = deriveUnknowns(session.coverage, session.evidence);
-  const message = priced ? null : appraisalMessage(appraisal);
+  const message = priced || stale ? null : appraisalMessage(appraisal);
+  const marketContextOnly = appraisal.status !== "priced" && appraisal.comparables.length > 0;
 
   return (
     <div className="min-h-screen bg-[#f4f6fa] flex flex-col">
       <div className="bg-[#1d4ed8] px-4 pt-12 pb-6">
         <div className="max-w-[430px] mx-auto">
-          <BackButton label="Evidence review" onClick={onBack} />
+          {busy ? (
+            <span className="flex items-center gap-1.5 text-blue-300/50 text-[12px] font-mono mb-4">Evidence review</span>
+          ) : (
+            <BackButton label="Evidence review" onClick={onBack} />
+          )}
           <p className="text-[10px] font-mono text-blue-300 tracking-widest uppercase mb-1">Appraisal</p>
           <p className="text-[15px] font-semibold text-white mb-5" style={{ fontFamily: "var(--font-display)" }}>
             {describeVehicle(appraisal)}
           </p>
 
-          {priced ? (
-            <div className="bg-white/10 rounded-xl px-4 py-4 backdrop-blur-sm border border-white/15">
+          {stale ? (
+            <div className="bg-white/10 rounded-xl px-4 py-4 backdrop-blur-sm border border-white/15" data-testid="stale-range">
+              <p className="text-[18px] font-bold text-white leading-snug mb-1.5" style={{ fontFamily: "var(--font-display)" }}>
+                Evidence changed since this appraisal
+              </p>
+              <p className="text-[12px] text-blue-100/90 leading-relaxed">
+                This result was computed from an earlier version of the inspection, so its range is not shown.
+                Go back and request a new appraisal.
+              </p>
+            </div>
+          ) : priced ? (
+            <div
+              className={`bg-white/10 rounded-xl px-4 py-4 backdrop-blur-sm border border-white/15 ${unconfirmed ? "opacity-60" : ""}`}
+              data-testid="priced-range"
+            >
               <p className="text-[11px] font-mono text-blue-300 uppercase tracking-wider mb-3">
-                Estimated asking-price range
+                Provisional range of comparable asking prices
               </p>
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span
@@ -70,10 +109,24 @@ export function AppraisalScreen({
               </div>
               {appraisal.price_mid !== null && (
                 <p className="text-[12px] font-mono text-blue-200/80 mt-2">
-                  Midpoint {formatPrice(appraisal.price_mid, appraisal.currency)} · from{" "}
-                  {appraisal.comparable_count} comparable listing
-                  {appraisal.comparable_count === 1 ? "" : "s"}
+                  Comparable estimate {formatPrice(appraisal.price_mid, appraisal.currency)} · from{" "}
+                  {appraisal.distinct_vehicle_groups || appraisal.comparable_count} distinct vehicle
+                  {(appraisal.distinct_vehicle_groups || appraisal.comparable_count) === 1 ? "" : "s"}
                 </p>
+              )}
+              {unconfirmed && (
+                <div className="mt-3" data-testid="unconfirmed-range">
+                  <p className="text-[12px] text-white leading-relaxed">
+                    Could not confirm this range matches the latest evidence.
+                  </p>
+                  <button
+                    onClick={onRefresh}
+                    disabled={!!busy}
+                    className="mt-1 text-[12px] font-mono font-semibold text-white underline disabled:opacity-40"
+                  >
+                    Reload session
+                  </button>
+                </div>
               )}
             </div>
           ) : (
@@ -101,6 +154,19 @@ export function AppraisalScreen({
       </div>
 
       <div className="flex-1 max-w-[430px] mx-auto w-full px-4 py-5 flex flex-col gap-4 pb-32">
+        {error && <ErrorBanner message={error} />}
+
+        {priced && (appraisal.method_note || appraisal.tax_note) && (
+          <div className="rounded-lg border border-[#dde2ef] bg-white px-4 py-3" data-testid="method-note">
+            {appraisal.method_note && (
+              <p className="text-[12px] text-[#0f1523] leading-relaxed">{appraisal.method_note}</p>
+            )}
+            {appraisal.tax_note && (
+              <p className="text-[11px] font-mono text-[#6b7a9e] mt-1.5">Prices: {appraisal.tax_note}</p>
+            )}
+          </div>
+        )}
+
         {/* Next-best-photo stays visible even after a price: more evidence
             can still change the picture. */}
         {appraisal.next_photo && (
@@ -120,8 +186,9 @@ export function AppraisalScreen({
               className="w-full flex items-center justify-between px-4 py-3 bg-white rounded-lg border border-[#dde2ef] hover:border-[#b8c1d9] transition-colors active:scale-[0.99]"
             >
               <span className="text-[13px] font-semibold text-[#0f1523]" style={{ fontFamily: "var(--font-display)" }}>
-                Based on {appraisal.comparable_count} real listing
-                {appraisal.comparable_count === 1 ? "" : "s"}
+                {marketContextOnly
+                  ? `Market context only — ${appraisal.comparable_count} listing${appraisal.comparable_count === 1 ? "" : "s"}, not a price for this truck`
+                  : `Based on ${appraisal.comparable_count} real listing${appraisal.comparable_count === 1 ? "" : "s"}`}
               </span>
               <span className="text-[11px] font-mono text-[#6b7a9e]">{comparablesOpen ? "Hide ↑" : "Show ↓"}</span>
             </button>
@@ -211,6 +278,7 @@ export function AppraisalScreen({
         <div className="max-w-[430px] mx-auto">
           <button
             onClick={onImprove}
+            disabled={!!busy}
             className="w-full flex items-center justify-between px-5 py-4 rounded-[8px] border-2 border-[#1d4ed8] hover:bg-[#f0f4ff] active:scale-[0.98] transition-all"
           >
             <div className="text-left">

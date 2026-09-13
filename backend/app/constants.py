@@ -38,8 +38,10 @@ PROVENANCE_INFERRED_CANDIDATE = "inferred_candidate"
 # GET /sessions/{id}'s `evidence` list.
 TRACKED_EVIDENCE_FIELDS = [
     "vehicle_category",
+    "make",
     "model_family",
     "axle_config",
+    "visible_axle_count",
     "year",
     "mileage_km",
     "vat_basis",

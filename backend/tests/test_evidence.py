@@ -44,14 +44,17 @@ def test_single_observed_from_photo_value():
     assert result.supporting_media_id == "media_1"
 
 
-def test_seller_and_photo_agree_is_confirmed():
+def test_seller_and_photo_with_identical_readings_is_source_agreement():
+    """Agreement is reported as "sources_agree" — corroboration between a
+    seller and a photo, never "verified" lifetime mileage."""
     records = [
         _record("mileage_km", "480000", "seller_declared"),
-        _record("mileage_km", "481000", "observed_from_photo", media_id="media_1"),
+        _record("mileage_km", "480 000", "observed_from_photo", media_id="media_1"),
     ]
     result = resolve_field("mileage_km", records)
-    assert result.status == "confirmed"
-    assert result.value == "481000"  # photo evidence preferred as the display value
+    assert result.status == "sources_agree"
+    assert result.value == "480 000"  # photo evidence preferred as the display value
+    assert result.canonical_value is not None
 
 
 def test_seller_mileage_conflicts_with_observed_mileage():
@@ -69,13 +72,15 @@ def test_seller_mileage_conflicts_with_observed_mileage():
     assert result.supporting_media_id == "media_odo"
 
 
-def test_small_mileage_discrepancy_within_tolerance_is_confirmed():
+def test_small_mileage_difference_is_a_discrepancy_not_agreement():
+    """The old 15% band called these the same fact. They are not."""
     records = [
         _record("mileage_km", "480000", "seller_declared"),
-        _record("mileage_km", "490000", "observed_from_photo"),  # ~2% apart
+        _record("mileage_km", "490000", "observed_from_photo", media_id="media_1"),
     ]
     result = resolve_field("mileage_km", records)
-    assert result.status == "confirmed"
+    assert result.status == "conflicting"
+    assert {p["raw_value"] for p in result.participants} == {"480000", "490000"}
 
 
 def test_year_requires_exact_match():
@@ -109,8 +114,27 @@ def test_string_field_agreement_is_case_insensitive():
     assert values_agree("model_family", "Actros", "TGX") is False
 
 
-def test_mileage_agreement_tolerance_boundary():
-    # Tolerance is relative to max(a, b): 100 vs 114 is a 12.3% gap (agrees),
-    # 100 vs 120 is a 16.7% gap (exceeds the 15% tolerance -> conflict).
-    assert values_agree("mileage_km", "100", "114") is True
-    assert values_agree("mileage_km", "100", "120") is False
+def test_mileage_has_no_tolerance_band():
+    assert values_agree("mileage_km", "100", "114") is False
+    assert values_agree("mileage_km", "850000", "1000000") is False
+    assert values_agree("mileage_km", "365 000", "365000") is True
+
+
+def test_repeated_analysis_of_one_image_is_not_independent_agreement():
+    records = [
+        _record("model_family", "F-MAX", "observed_from_photo", media_id="media_1", offset_seconds=0),
+        _record("model_family", "FMAX", "observed_from_photo", media_id="media_1", offset_seconds=1),
+    ]
+    result = resolve_field("model_family", records)
+    assert result.status == "observed_from_photo"
+
+
+def test_superseded_records_are_history_not_participants():
+    old = _record("model_family", "r-series", "inferred_candidate", media_id="media_1")
+    old.state = "superseded"
+    old.state_reason = "superseded by a photo-supported observation of the same vehicle"
+    new = _record("model_family", "F-MAX", "observed_from_photo", media_id="media_2", offset_seconds=1)
+    result = resolve_field("model_family", [old, new])
+    assert result.status == "observed_from_photo"
+    assert [p["raw_value"] for p in result.participants] == ["F-MAX"]
+    assert [h["raw_value"] for h in result.superseded] == ["r-series"]

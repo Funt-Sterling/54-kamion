@@ -1,4 +1,10 @@
-# Evaluation — not yet built
+# Evaluation
+
+- **`visual/`** — human-labeled visual evaluation of the vision contract
+  (manifest, scorer, call/cost-limited model benchmark). All 40 slots are
+  pending human labels; see `visual/README.md`.
+
+## Pricing evaluation — not yet built
 
 This is where the held-out evaluation from `docs/plan.md` section 5 goes
 once `data_pipeline/` is producing real volume:

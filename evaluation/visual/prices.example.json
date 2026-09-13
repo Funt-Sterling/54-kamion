@@ -1,0 +1,11 @@
+{
+  "_note": "Fill in from the current Anthropic price list before a paid run. Values are USD per million tokens. Not pre-filled: a guessed price would make the cost ceiling meaningless.",
+  "claude-sonnet-5": {
+    "input_per_mtok": null,
+    "output_per_mtok": null
+  },
+  "claude-opus-5": {
+    "input_per_mtok": null,
+    "output_per_mtok": null
+  }
+}

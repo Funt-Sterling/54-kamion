@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/api/client";
-import type { Appraisal, Finding, SessionDetail } from "@/api/types";
+import type { Appraisal, CaptureOrigin, Finding, SessionDetail } from "@/api/types";
+import { normalizeAppraisal, normalizeSession } from "@/lib/contract";
 import { errorMessage } from "@/lib/format";
 import { QUALITY_PHASE_MS, type BusyState, type ProcessingPhase } from "@/lib/progress";
 import { AppraisalScreen } from "@/screens/AppraisalScreen";
@@ -28,6 +29,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastOutcome, setLastOutcome] = useState<UploadOutcome | null>(null);
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
+  /**
+   * True from the moment a mutation reaches the server until a session
+   * refresh succeeds. While set, what's on screen may predate the server's
+   * evidence, so no range may be presented as current.
+   */
+  const [sessionStale, setSessionStale] = useState(false);
 
   /**
    * A ref, not the state flag: two clicks in the same tick both read the
@@ -64,10 +71,34 @@ export default function App() {
   }, [checkHealth]);
 
   const refreshSession = useCallback(async (sessionId: string) => {
-    const detail = await api.getSession(sessionId);
+    const detail = normalizeSession(await api.getSession(sessionId));
     setSession(detail);
+    setSessionStale(false);
     return detail;
   }, []);
+
+  /**
+   * Refresh after a mutation that already succeeded. A failure here must
+   * not look like the mutation failed (its result is real and kept), and
+   * must not leave old evidence looking current either.
+   */
+  async function refreshAfterMutation(sessionId: string): Promise<boolean> {
+    try {
+      await refreshSession(sessionId);
+      return true;
+    } catch (caught) {
+      setSessionStale(true);
+      setError(`Saved, but the latest session state could not be loaded: ${errorMessage(caught)} What you see may be out of date.`);
+      return false;
+    }
+  }
+
+  async function retryRefresh() {
+    if (!session) return;
+    await run({ kind: "refreshing", phase: null }, async () => {
+      await refreshSession(session.id);
+    });
+  }
 
   /** Wraps every mutating call: one at a time, errors never lose the session. */
   async function run<T>(state: BusyState, work: () => Promise<T>): Promise<T | undefined> {
@@ -100,13 +131,14 @@ export default function App() {
     if (!created) return;
     setAppraisal(null);
     setLastOutcome(null);
+    setSessionStale(false);
     setScreen("capture");
   }
 
-  async function uploadPhoto(file: File, componentHint?: string) {
+  async function uploadPhoto(file: File, componentHint: string | undefined, origin: CaptureOrigin) {
     if (!session) return;
     await run({ kind: "processing", phase: "uploading" }, async () => {
-      const media = await api.uploadPhoto(session.id, file, componentHint, () => {
+      const media = await api.uploadPhoto(session.id, file, componentHint, origin, () => {
         // Bytes are on the server now — a real event, not a guess.
         setPhase("checking");
         clearPhaseTimer();
@@ -116,30 +148,38 @@ export default function App() {
       clearPhaseTimer();
       setPhase("updating");
 
+      // The server has changed the evidence: until a refresh lands, the
+      // session on screen is behind it.
+      setSessionStale(true);
       const previewUrl = URL.createObjectURL(file);
       photoUrls.current.set(media.id, previewUrl);
       setLastOutcome({ media, previewUrl });
-      await refreshSession(session.id);
+      if (!(await refreshAfterMutation(session.id))) {
+        setLastOutcome({ media, previewUrl, stale: true });
+      }
     });
   }
 
-  async function declareDetail(field: string, value: string) {
+  async function declareDetail(field: string, value: string, intent: "seller_declared" | "user_corrected" = "seller_declared") {
     if (!session) return;
     await run({ kind: "declaring", phase: null }, async () => {
-      await api.declareDetail(session.id, { field, value });
-      await refreshSession(session.id);
+      await api.declareDetail(session.id, { field, value, intent });
+      setSessionStale(true);
+      await refreshAfterMutation(session.id);
     });
   }
 
   async function requestAppraisal() {
     if (!session) return;
     const result = await run({ kind: "appraising", phase: null }, async () => {
-      const created = await api.createAppraisal(session.id);
-      await refreshSession(session.id);
+      const created = normalizeAppraisal(await api.createAppraisal(session.id));
+      // Keep the appraisal the server made even if the refresh below fails;
+      // the appraisal screen compares revisions and says so when it can't.
+      setAppraisal(created);
+      await refreshAfterMutation(session.id);
       return created;
     });
     if (!result) return;
-    setAppraisal(result);
     setScreen("appraisal");
   }
 
@@ -156,6 +196,8 @@ export default function App() {
         onUpload={uploadPhoto}
         onReview={() => canNavigate && setScreen("review")}
         lastOutcome={lastOutcome}
+        sessionStale={sessionStale}
+        onRefresh={retryRefresh}
         error={error}
         onDismissError={() => setError(null)}
       />
@@ -172,6 +214,8 @@ export default function App() {
         onCapture={() => canNavigate && setScreen("capture")}
         onAppraise={requestAppraisal}
         onDeclare={declareDetail}
+        sessionStale={sessionStale}
+        onRefresh={retryRefresh}
         error={error}
         onDismissError={() => setError(null)}
       />
@@ -183,8 +227,12 @@ export default function App() {
       <AppraisalScreen
         appraisal={appraisal}
         session={session}
-        onBack={() => setScreen("review")}
-        onImprove={() => setScreen("capture")}
+        sessionStale={sessionStale}
+        onRefresh={retryRefresh}
+        busy={busy}
+        error={error}
+        onBack={() => canNavigate && setScreen("review")}
+        onImprove={() => canNavigate && setScreen("capture")}
         onFindingTap={(finding) => {
           setActiveFinding(finding);
           setScreen("evidence-detail");

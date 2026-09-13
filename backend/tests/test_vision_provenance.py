@@ -1,41 +1,35 @@
-"""How real vision output lands in the evidence model (Steps 3, 4, 6).
+"""Where facts come from, through the real endpoints (v1 contract).
 
-Complements test_e2e_flow.py: these drive the same real endpoints, but
-focus on *where facts come from* rather than on the gate's branching —
-that every visual fact is recorded as observed_from_photo, that a
-seller's contradicting claim is preserved as a conflict rather than
-overwritten, and that a failed model call never becomes silent evidence.
+Complements test_e2e_flow.py, which covers gate branching. These focus on
+provenance: every admitted visual fact cites its photo and inference run,
+a readable badge is an observation while a shape guess stays a candidate,
+a failed call leaves no evidence, and a price can never enter the ledger.
 
-The vision call is scripted (see tests/helpers.py) so these are
-deterministic; the fixtures used here are copied from the shape of a real
-Claude response to a real F-MAX photo.
+The fixtures are scripted proposals shaped like the v1 schema. They prove how
+proposals are treated, not that a real model reads a real photo correctly.
 """
 
 from app.db import SessionLocal
-from app.models import EvidenceRecord, Listing
+from app.models import EvidenceRecord, InferenceRun, MediaItem, ObservedView
 
-from .helpers import make_image, patch_vision_adapter, truck_result, upload_media
-
-# Shape of the real response to the real front-exterior F-MAX photo: the
-# badge is legible, but a frontal shot shows no odometer, plate year, or
-# axle count — so extracted_specs is genuinely empty.
-REAL_FRONT_PHOTO_RESULT = dict(
-    vehicle_category_guess="tractor_unit",
-    make_guess="Ford",
-    model_guess="F-MAX",
-    visible_badge_text="F-MAX Ford",
-    extracted_specs={},
+from .helpers import (
+    appearance_only_proposal,
+    front_badge_proposal,
+    make_image,
+    odometer_proposal,
+    patch_vision_adapter,
+    upload_media,
+    upload_scripted,
 )
 
 
-def _evidence(session_id: str, field: str) -> list[EvidenceRecord]:
+def _records(session_id: str, field: str | None = None) -> list[EvidenceRecord]:
     db = SessionLocal()
     try:
-        return (
-            db.query(EvidenceRecord)
-            .filter(EvidenceRecord.session_id == session_id, EvidenceRecord.field == field)
-            .all()
-        )
+        query = db.query(EvidenceRecord).filter(EvidenceRecord.session_id == session_id)
+        if field:
+            query = query.filter(EvidenceRecord.field == field)
+        return query.all()
     finally:
         db.close()
 
@@ -45,165 +39,162 @@ def _field_state(client, session_id: str, field: str) -> dict:
     return next(e for e in session["evidence"] if e["field"] == field)
 
 
-# --- provenance ----------------------------------------------------------------------
-
-
-def test_visual_facts_are_stored_as_observed_from_photo(client, monkeypatch, tmp_path):
+def test_admitted_visual_facts_cite_their_photo_and_inference_run(client, monkeypatch, tmp_path):
     session_id = client.post("/sessions").json()["id"]
-    patch_vision_adapter(
-        monkeypatch,
-        lambda path, hint: truck_result(**{**REAL_FRONT_PHOTO_RESULT, "extracted_specs": {"mileage_km": "480000"}}),
-    )
-    upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
+    upload_scripted(client, monkeypatch, tmp_path, session_id, front_badge_proposal("FORD TRUCKS F-MAX"), name="f.jpg", seed=1)
 
-    for field in ("mileage_km", "vehicle_category"):
-        records = _evidence(session_id, field)
-        assert records, f"no evidence recorded for {field}"
-        assert all(r.provenance == "observed_from_photo" for r in records)
-        assert all(r.media_id is not None for r in records), "photo-derived evidence must cite its photo"
+    records = _records(session_id)
+    assert {r.field for r in records} == {"vehicle_category", "make", "model_family"}
+    assert all(r.provenance == "observed_from_photo" for r in records)
+    assert all(r.media_id and r.run_id for r in records)
 
+    family = next(r for r in records if r.field == "model_family")
+    assert (family.value, family.canonical_value) == ("FORD TRUCKS F-MAX", "f-max")
 
-def test_legible_badge_is_observed_not_merely_inferred(client, monkeypatch, tmp_path):
-    """A badge Claude can actually read is stronger evidence than a visual
-    hunch, and the two must stay distinguishable."""
-    session_id = client.post("/sessions").json()["id"]
-    patch_vision_adapter(monkeypatch, lambda path, hint: truck_result(**REAL_FRONT_PHOTO_RESULT))
-    upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
-
-    assert _field_state(client, session_id, "model_family")["status"] == "observed_from_photo"
+    db = SessionLocal()
+    try:
+        run = db.get(InferenceRun, family.run_id)
+        assert run.failure_type is None
+        assert run.model_id == "scripted-test-model"
+        assert run.image_sha256 and len(run.image_sha256) == 64
+        assert "model_family" in run.admitted
+    finally:
+        db.close()
 
 
-def test_guess_without_a_legible_badge_is_only_a_candidate(client, monkeypatch, tmp_path):
-    session_id = client.post("/sessions").json()["id"]
-    patch_vision_adapter(
-        monkeypatch,
-        lambda path, hint: truck_result(**{**REAL_FRONT_PHOTO_RESULT, "visible_badge_text": None}),
-    )
-    upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
+def test_readable_badge_is_observed_and_shape_guess_is_only_a_candidate(client, monkeypatch, tmp_path):
+    observed = client.post("/sessions").json()["id"]
+    upload_scripted(client, monkeypatch, tmp_path, observed, front_badge_proposal("F-MAX"), name="a.jpg", seed=1)
+    assert _field_state(client, observed, "model_family")["status"] == "observed_from_photo"
 
-    assert _field_state(client, session_id, "model_family")["status"] == "inferred_candidate"
-
-
-def test_seller_claim_conflicting_with_the_dashboard_is_preserved(client, monkeypatch, tmp_path):
-    """The spec's worked example: seller says 250,000 km, the dashboard
-    photo reads 650,000 km. Both survive; neither is chosen."""
-    session_id = client.post("/sessions").json()["id"]
-    client.patch(f"/sessions/{session_id}/details", json={"field": "mileage_km", "value": "250000"})
-    patch_vision_adapter(
-        monkeypatch,
-        lambda path, hint: truck_result(**{**REAL_FRONT_PHOTO_RESULT, "extracted_specs": {"mileage_km": "650000"}}),
-    )
-    upload_media(client, session_id, make_image(tmp_path / "dash.jpg"), component_hint="dashboard_odometer")
-
-    state = _field_state(client, session_id, "mileage_km")
-    assert state["status"] == "conflicting"
-    assert state["value"] is None
-    assert state["seller_declared"] == "250000"
-    assert state["observed_from_photo"] == "650000"
-
-    provenances = {r.provenance for r in _evidence(session_id, "mileage_km")}
-    assert provenances == {"seller_declared", "observed_from_photo"}
-
-    appraisal = client.post(f"/sessions/{session_id}/appraisals").json()
-    assert appraisal["status"] == "needs_evidence"
-    assert appraisal["price_mid"] is None
-
-
-# --- unresolved fields stay unresolved ------------------------------------------------
+    guessed = client.post("/sessions").json()["id"]
+    upload_scripted(client, monkeypatch, tmp_path, guessed, appearance_only_proposal("F-MAX"), name="b.jpg", seed=2)
+    assert _field_state(client, guessed, "model_family")["status"] == "inferred_candidate"
 
 
 def test_front_photo_alone_leaves_pricing_inputs_unknown(client, monkeypatch, tmp_path):
-    """A frontal shot genuinely cannot show mileage, model year, or axle
-    count — those must stay unknown rather than being filled in."""
     session_id = client.post("/sessions").json()["id"]
-    patch_vision_adapter(monkeypatch, lambda path, hint: truck_result(**REAL_FRONT_PHOTO_RESULT))
-    upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
-
-    for field in ("mileage_km", "year", "axle_config"):
+    upload_scripted(client, monkeypatch, tmp_path, session_id, front_badge_proposal(), name="f.jpg", seed=1)
+    for field in ("mileage_km", "year", "axle_config", "visible_axle_count"):
         assert _field_state(client, session_id, field)["status"] == "unknown"
 
 
-def test_failed_vision_call_records_no_evidence_at_all(client, monkeypatch, tmp_path):
-    """A failed analysis must not be mistaken for a photo that showed
-    nothing — no evidence rows, and the media marked failed."""
+def test_request_and_observation_are_reported_separately(client, monkeypatch, tmp_path):
+    """Case 14 (API half): the response names what was asked for and what
+    the photo showed, and says whether they match."""
+    session_id = client.post("/sessions").json()["id"]
+    body = upload_scripted(
+        client, monkeypatch, tmp_path, session_id, odometer_proposal(), name="o.jpg", seed=1, hint="front_exterior"
+    )
+    assert body["requested_view"] == "front_exterior"
+    assert [v["view"] for v in body["observed_views"]] == ["odometer"]
+    assert body["requested_view_satisfied"] is False
+    assert "component_tag" not in body
+
+
+def test_capture_origin_is_recorded_as_reported_and_validated(client, monkeypatch, tmp_path):
+    session_id = client.post("/sessions").json()["id"]
+    patch_vision_adapter(monkeypatch, lambda path, hint: front_badge_proposal())
+
+    with open(make_image(tmp_path / "g.jpg", seed=3), "rb") as handle:
+        body = client.post(
+            f"/sessions/{session_id}/media",
+            data={"kind": "photo", "source": "imported", "capture_origin": "gallery"},
+            files={"file": ("g.jpg", handle, "image/jpeg")},
+        ).json()
+    assert body["capture_origin"] == "gallery"
+
+    with open(make_image(tmp_path / "h.jpg", seed=4), "rb") as handle:
+        bad = client.post(
+            f"/sessions/{session_id}/media",
+            data={"kind": "photo", "source": "captured", "capture_origin": "verified_camera"},
+            files={"file": ("h.jpg", handle, "image/jpeg")},
+        )
+    assert bad.status_code == 422
+
+
+def test_failed_vision_call_records_no_evidence_or_views(client, monkeypatch, tmp_path):
     def _boom(path, hint):
         raise RuntimeError("simulated API error")
 
     session_id = client.post("/sessions").json()["id"]
     patch_vision_adapter(monkeypatch, _boom)
-    response = upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
-
+    response = upload_media(client, session_id, make_image(tmp_path / "front.jpg"))
     assert response.json()["vision_status"] == "failed"
+
     db = SessionLocal()
     try:
         assert db.query(EvidenceRecord).filter(EvidenceRecord.session_id == session_id).count() == 0
+        assert db.query(ObservedView).filter(ObservedView.session_id == session_id).count() == 0
+        runs = db.query(InferenceRun).filter(InferenceRun.session_id == session_id).all()
+        assert [r.failure_type for r in runs] == ["transport"]
+        # Exception detail stays out of the stored trace beyond its class name.
+        assert "simulated API error" not in (runs[0].raw_proposal or "")
     finally:
         db.close()
 
 
-# --- the model cannot inject a price --------------------------------------------------
+def test_a_price_cannot_enter_the_evidence_ledger(client, monkeypatch, tmp_path):
+    """The v1 schema has nowhere to put a price, and unknown keys are a
+    schema error — so price-shaped output fails closed."""
+    from app.services.proposal import ProposalSchemaError, parse_proposal
 
+    from .helpers import proposal_json
 
-def test_vision_cannot_introduce_a_price_field_into_evidence(client, monkeypatch, tmp_path):
-    """Even if a model returned price-shaped specs, they must not reach the
-    evidence model — the adapter whitelist drops them upstream."""
+    for extra in ({"price": 3_000_000}, {"estimated_value_try": "3.000.000"}):
+        try:
+            parse_proposal(proposal_json(extra=extra))
+        except ProposalSchemaError:
+            continue
+        raise AssertionError(f"{extra} was accepted")
+
     session_id = client.post("/sessions").json()["id"]
-    patch_vision_adapter(
-        monkeypatch,
-        lambda path, hint: truck_result(
-            **{**REAL_FRONT_PHOTO_RESULT, "extracted_specs": {"mileage_km": "480000"}}
-        ),
-    )
-    upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
+    upload_scripted(client, monkeypatch, tmp_path, session_id, front_badge_proposal(), name="f.jpg", seed=1)
+    fields = {r.field for r in _records(session_id)}
+    assert not any("price" in f or "value" in f for f in fields), fields
 
+
+def test_legacy_hint_only_media_does_not_satisfy_coverage_after_migration(client, tmp_path):
+    """Case 15: pre-contract rows keep their hint as a hint. The migration
+    preserves them, demotes unsupported visual evidence, and invents no
+    observed views."""
+    from app.config import get_settings
+    from scripts.migrate_evidence_contract import migrate, sqlite_path_from_url
+
+    session_id = client.post("/sessions").json()["id"]
     db = SessionLocal()
     try:
-        fields = {r.field for r in db.query(EvidenceRecord).filter(EvidenceRecord.session_id == session_id).all()}
-    finally:
-        db.close()
-    assert not any("price" in f.lower() or "value" in f.lower() for f in fields), fields
-
-
-def test_badge_case_does_not_break_comparable_lookup(client, monkeypatch, tmp_path):
-    """Claude reads the badge as "F-MAX"; the market dataset keys it
-    "f-max". The lookup has to canonicalize or every real photo silently
-    returns insufficient_market_data."""
-    db = SessionLocal()
-    try:
-        for i in range(8):
-            db.add(
-                Listing(
-                    source_url=f"https://example.test/{i}",
-                    location="İstanbul, TR",
-                    country="TR",
-                    make="FORD",
-                    model="F-MAX",
-                    model_family="f-max",
-                    category="tractor_unit",
-                    year=2021,
-                    mileage_km=350_000 + i * 10_000,
-                    axle_config="4x2",
-                    price=2_400_000 + i * 25_000,
-                    currency="TRY",
-                    vat_basis="unknown",
-                    partition="dev",
-                )
+        media = MediaItem(
+            session_id=session_id, kind="photo", source="captured", file_path=str(tmp_path / "legacy.jpg"),
+            component_tag="front_exterior", client_hint=None, accepted=True, vision_status="ok",
+        )
+        db.add(media)
+        db.flush()
+        db.add(
+            EvidenceRecord(
+                session_id=session_id, field="model_family", value="actros",
+                provenance="observed_from_photo", media_id=media.id, run_id=None,
             )
+        )
         db.commit()
+        media_id = media.id
     finally:
         db.close()
 
-    session_id = client.post("/sessions").json()["id"]
-    patch_vision_adapter(
-        monkeypatch,
-        lambda path, hint: truck_result(
-            **{**REAL_FRONT_PHOTO_RESULT, "extracted_specs": {"year": "2021", "mileage_km": "400000", "axle_config": "4X2"}}
-        ),
-    )
-    upload_media(client, session_id, make_image(tmp_path / "front.jpg"), component_hint="front_exterior")
+    assert migrate(sqlite_path_from_url(get_settings().database_url), dry_run=False) == 0
 
-    appraisal = client.post(f"/sessions/{session_id}/appraisals").json()
-    assert appraisal["status"] == "priced", appraisal
-    assert appraisal["comparable_count"] >= 5
-    # Stored evidence keeps what was actually read, uppercase and all.
-    assert _field_state(client, session_id, "model_family")["value"] == "F-MAX"
+    db = SessionLocal()
+    try:
+        assert db.get(MediaItem, media_id).client_hint == "front_exterior"
+        record = db.query(EvidenceRecord).filter(EvidenceRecord.session_id == session_id).one()
+        assert record.state == "legacy_unverified"
+        assert db.query(ObservedView).filter(ObservedView.session_id == session_id).count() == 0
+    finally:
+        db.close()
+
+    session = client.get(f"/sessions/{session_id}").json()
+    assert session["coverage"]["front_exterior"] == "missing"
+    family = next(e for e in session["evidence"] if e["field"] == "model_family")
+    assert family["status"] == "unknown"
+    assert family["superseded"][0]["state"] == "legacy_unverified"
+    assert session["gate_status"] == "needs_evidence"

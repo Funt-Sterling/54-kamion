@@ -37,7 +37,7 @@ export function ProvenanceBadge({ status }: { status: FieldStatus }) {
 
 const COVERAGE_STYLES: Record<CoverageState, { dot: string; chip: string; label: string }> = {
   captured: { dot: "bg-[#16a34a]", chip: "bg-[#dcfce7] border-[#bbf7d0] text-[#166534]", label: "Captured" },
-  attention: { dot: "bg-[#ea580c]", chip: "bg-[#fff7ed] border-[#fed7aa] text-[#9a3412]", label: "Retake" },
+  attention: { dot: "bg-[#ea580c]", chip: "bg-[#fff7ed] border-[#fed7aa] text-[#9a3412]", label: "Partial" },
   missing: { dot: "bg-[#cbd5e1]", chip: "bg-[#f4f6fa] border-[#dde2ef] text-[#6b7a9e]", label: "Missing" },
 };
 

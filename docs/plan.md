@@ -141,7 +141,7 @@ See `docs/api-contract.md` for the concrete request/response shapes implemented 
 | `POST /sessions` | Start one vehicle inspection. |
 | `POST /sessions/{id}/media` | Accept a photo, video, or sampled frame. |
 | `GET /sessions/{id}` | Return progress, coverage, findings, and next capture instruction. |
-| `PATCH /sessions/{id}/details` | Record confirmed or seller-declared specifications with provenance. |
+| `PATCH /sessions/{id}/details` | Record seller-declared specifications or user corrections; the server assigns provenance (see docs/api-contract.md). |
 | `POST /sessions/{id}/appraisals` | Produce a versioned appraisal from the current evidence. |
 
 Appraisals return `priced`, `needs_evidence`, `unsupported`, `insufficient_market_data`, or `inspection_required`, plus reasons. Numeric outputs come from pricing code; written explanations reference stored evidence and comparables.

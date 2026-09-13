@@ -1,0 +1,669 @@
+{
+  "schema": "tirage-visual-eval-manifest/v1",
+  "note": "Slots only. Every label must be written by a person; status stays 'pending' until then. Claude/model output must never be used as ground truth. See README.md for the label format.",
+  "label_template": {
+    "labeler": "<person's name>",
+    "labeled_at": "<ISO-8601>",
+    "adjudicator": null,
+    "subject": {
+      "extent": "whole|partial|none|unclear",
+      "category": "tractor_unit|other_vehicle|nonvehicle|unknown"
+    },
+    "views": {
+      "front": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "rear": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "side": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "tire": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "dashboard": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "odometer": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "cab": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "chassis": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      },
+      "badge": {
+        "visibility": "visible|absent|unclear",
+        "usable": false
+      }
+    },
+    "odometer": {
+      "readable": false,
+      "digits": null,
+      "unit": null
+    },
+    "make": {
+      "readable": false,
+      "canonical": null
+    },
+    "model_family": {
+      "readable": false,
+      "canonical": null
+    },
+    "visible_axle_count": null,
+    "findings": [],
+    "forbidden_claims": []
+  },
+  "images": [
+    {
+      "image_id": "img-001",
+      "scenario_bucket": "front",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-002",
+      "scenario_bucket": "front",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-003",
+      "scenario_bucket": "front",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-004",
+      "scenario_bucket": "front",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-005",
+      "scenario_bucket": "rear",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-006",
+      "scenario_bucket": "rear",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-007",
+      "scenario_bucket": "side",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-008",
+      "scenario_bucket": "side",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-009",
+      "scenario_bucket": "side",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-010",
+      "scenario_bucket": "side",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-011",
+      "scenario_bucket": "tire",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-012",
+      "scenario_bucket": "tire",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-013",
+      "scenario_bucket": "tire",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-014",
+      "scenario_bucket": "tire",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-015",
+      "scenario_bucket": "dashboard",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-016",
+      "scenario_bucket": "dashboard",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-017",
+      "scenario_bucket": "dashboard",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-018",
+      "scenario_bucket": "odometer",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-019",
+      "scenario_bucket": "odometer",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-020",
+      "scenario_bucket": "odometer",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-021",
+      "scenario_bucket": "odometer",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-022",
+      "scenario_bucket": "odometer",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-023",
+      "scenario_bucket": "odometer",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-024",
+      "scenario_bucket": "cab",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-025",
+      "scenario_bucket": "cab",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-026",
+      "scenario_bucket": "chassis",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-027",
+      "scenario_bucket": "chassis",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-028",
+      "scenario_bucket": "chassis",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-029",
+      "scenario_bucket": "badge",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-030",
+      "scenario_bucket": "badge",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-031",
+      "scenario_bucket": "badge",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-032",
+      "scenario_bucket": "dark_or_blurry",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-033",
+      "scenario_bucket": "dark_or_blurry",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-034",
+      "scenario_bucket": "dark_or_blurry",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-035",
+      "scenario_bucket": "partial_truck",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-036",
+      "scenario_bucket": "partial_truck",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-037",
+      "scenario_bucket": "wrong_vehicle_or_irrelevant",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-038",
+      "scenario_bucket": "wrong_vehicle_or_irrelevant",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-039",
+      "scenario_bucket": "wrong_vehicle_or_irrelevant",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    },
+    {
+      "image_id": "img-040",
+      "scenario_bucket": "wrong_vehicle_or_irrelevant",
+      "path": null,
+      "sha256": null,
+      "permission": {
+        "source": null,
+        "granted_by": null,
+        "note": null
+      },
+      "vehicle_group": null,
+      "split": null,
+      "status": "pending",
+      "label": null
+    }
+  ]
+}

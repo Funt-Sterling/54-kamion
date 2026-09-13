@@ -58,7 +58,7 @@ export function isPhaseActive(phase: ProcessingPhase, current: ProcessingPhase |
  * Every kind of in-flight work. The UI blocks navigation on any of these
  * so a judge can't tap through to evidence that hasn't caught up yet.
  */
-export type BusyKind = "starting" | "processing" | "declaring" | "appraising";
+export type BusyKind = "starting" | "processing" | "declaring" | "appraising" | "refreshing";
 
 export interface BusyState {
   kind: BusyKind;
@@ -81,5 +81,7 @@ export function busyLabel(busy: BusyState | null): string | null {
       return "Saving detail";
     case "appraising":
       return "Retrieving comparable listings";
+    case "refreshing":
+      return "Loading latest session state";
   }
 }
